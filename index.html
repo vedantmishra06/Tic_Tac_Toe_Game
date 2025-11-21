@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Tic Tac Toe — JavaScript</title>
+<style>
+  :root{
+    --bg:#0f1724; --card:#0b1220; --accent:#22c55e; --muted:#94a3b8;
+    --win:#ef4444;
+  }
+  *{box-sizing:border-box;font-family:Inter,Segoe UI,system-ui,Arial}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#061021,#071526);color:#e6eef6}
+  .wrap{width:360px;padding:18px;border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));box-shadow:0 8px 30px rgba(0,0,0,0.6)}
+  h1{margin:0 0 8px;font-size:20px;text-align:center}
+  .controls{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px}
+  .btn{background:#0f1724;border:1px solid rgba(255,255,255,0.04);padding:6px 10px;border-radius:8px;color:var(--muted);cursor:pointer}
+  .btn.primary{background:var(--accent);color:#042014;border:none}
+  .status{text-align:center;margin-bottom:12px;color:var(--muted)}
+  .board{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .cell{width:100px;height:100px;display:flex;align-items:center;justify-content:center;background:var(--card);border-radius:10px;font-size:42px;cursor:pointer;user-select:none}
+  .cell.win{background:linear-gradient(90deg,rgba(34,197,94,0.12),rgba(239,68,68,0.06));box-shadow:0 6px 18px rgba(0,0,0,0.5)}
+  .footer{display:flex;justify-content:space-between;margin-top:12px;font-size:13px;color:var(--muted);align-items:center}
+  .mode-toggle{display:flex;gap:6px}
+  .small{font-size:12px;color:var(--muted)}
+  @media(max-width:420px){
+    .wrap{width:92vw}
+    .cell{height:calc((92vw - 36px)/3);font-size:36px}
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Tic Tac Toe</h1>
+    <div class="controls">
+      <div>
+        <button id="resetBtn" class="btn">Reset</button>
+        <button id="undoBtn" class="btn">Undo</button>
+      </div>
+      <div>
+        <button id="twoPlayerBtn" class="btn">2 Players</button>
+        <button id="cpuBtn" class="btn primary">Play vs CPU</button>
+      </div>
+    </div>
+
+    <div class="status" id="status">Turn: <strong id="turn">X</strong></div>
+
+    <div class="board" id="board"></div>
+
+    <div class="footer">
+      <div class="small">Click a cell to play. CPU uses optimal moves.</div>
+      <div class="small mode-toggle">X: <span id="scoreX">0</span> • O: <span id="scoreO">0</span></div>
+    </div>
+  </div>
+
+<script>
+/* ---------- Game state ---------- */
+const boardEl = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const turnEl = document.getElementById('turn');
+const resetBtn = document.getElementById('resetBtn');
+const undoBtn = document.getElementById('undoBtn');
+const twoPlayerBtn = document.getElementById('twoPlayerBtn');
+const cpuBtn = document.getElementById('cpuBtn');
+const scoreXEl = document.getElementById('scoreX');
+const scoreOEl = document.getElementById('scoreO');
+
+let board = Array(9).fill('');        // '', 'X', 'O'
+let currentPlayer = 'X';
+let vsCPU = true;
+let scores = { X: 0, O: 0 };
+let gameOver = false;
+let history = []; // to support undo
+
+/* ---------- Win combos ---------- */
+const wins = [
+  [0,1,2],[3,4,5],[6,7,8],
+  [0,3,6],[1,4,7],[2,5,8],
+  [0,4,8],[2,4,6]
+];
+
+/* ---------- Render ---------- */
+function renderBoard(){
+  boardEl.innerHTML = '';
+  board.forEach((cell, idx) => {
+    const el = document.createElement('div');
+    el.className = 'cell';
+    el.dataset.index = idx;
+    el.textContent = cell;
+    el.addEventListener('click', onCellClick);
+    boardEl.appendChild(el);
+  });
+  updateStatus();
+}
+
+/* ---------- Cell click ---------- */
+function onCellClick(e){
+  const idx = Number(e.currentTarget.dataset.index);
+  if(gameOver || board[idx]) return;
+  makeMove(idx, currentPlayer);
+}
+
+/* ---------- Make move ---------- */
+function makeMove(idx, player){
+  history.push({board: board.slice(), player, idx});
+  board[idx] = player;
+  const winner = checkWinner(board);
+  renderMarks();
+  if(winner){
+    finishGame(winner);
+    return;
+  }
+  currentPlayer = (player === 'X') ? 'O' : 'X';
+  updateStatus();
+
+  // CPU move
+  if(vsCPU && !gameOver && currentPlayer === 'O'){
+    // small delay for UX
+    setTimeout(() => {
+      const cpuIdx = bestMove(board);
+      makeMove(cpuIdx, 'O');
+    }, 220);
+  }
+}
+
+/* ---------- Render marks & highlight wins ---------- */
+function renderMarks(){
+  const children = Array.from(boardEl.children);
+  children.forEach((el, i) => {
+    el.textContent = board[i];
+    el.classList.remove('win');
+  });
+  const winner = checkWinner(board);
+  if(winner && winner !== 'tie'){
+    const combo = winningCombo(board, winner);
+    if(combo) combo.forEach(i => children[i].classList.add('win'));
+  }
+}
+
+/* ---------- Check winner or tie ---------- */
+function checkWinner(b){
+  for(const [a,b1,c] of wins){
+    if(b[a] && b[a] === b[b1] && b[a] === b[c]) return b[a];
+  }
+  if(b.every(cell => cell !== '')) return 'tie';
+  return null;
+}
+function winningCombo(b, player){
+  for(const w of wins) if(w.every(i => b[i] === player)) return w;
+  return null;
+}
+
+/* ---------- Finish game ---------- */
+function finishGame(result){
+  gameOver = true;
+  if(result === 'tie'){
+    statusEl.innerHTML = "<strong>It's a tie!</strong>";
+  } else {
+    statusEl.innerHTML = `<strong>${result} wins!</strong>`;
+    scores[result] += 1;
+    scoreXEl.textContent = scores.X;
+    scoreOEl.textContent = scores.O;
+  }
+}
+
+/* ---------- Update status ---------- */
+function updateStatus(){
+  if(gameOver) return;
+  turnEl.textContent = currentPlayer;
+  statusEl.innerHTML = `Turn: <strong id="turn">${currentPlayer}</strong>`;
+}
+
+/* ---------- Reset & New Game ---------- */
+function resetGame(startX=true){
+  board = Array(9).fill('');
+  currentPlayer = startX ? 'X' : 'O';
+  gameOver = false;
+  history = [];
+  renderBoard();
+}
+resetBtn.addEventListener('click', () => resetGame(true));
+
+/* ---------- Undo ---------- */
+undoBtn.addEventListener('click', () => {
+  if(history.length === 0 || gameOver) return;
+  // revert to previous board (pop last move)
+  history.pop(); // last move was the current state
+  const prev = history.pop(); // previous state to restore
+  if(prev){
+    board = prev.board.slice();
+    currentPlayer = prev.player === 'X' ? 'O' : 'X';
+    gameOver = false;
+    renderBoard();
+  } else {
+    board = Array(9).fill('');
+    currentPlayer = 'X';
+    gameOver = false;
+    renderBoard();
+  }
+});
+
+/* ---------- Mode toggles ---------- */
+twoPlayerBtn.addEventListener('click', () => {
+  vsCPU = false;
+  twoPlayerBtn.classList.add('primary');
+  cpuBtn.classList.remove('primary');
+  resetGame(true);
+});
+cpuBtn.addEventListener('click', () => {
+  vsCPU = true;
+  cpuBtn.classList.add('primary');
+  twoPlayerBtn.classList.remove('primary');
+  resetGame(true);
+});
+
+/* ---------- Minimax / CPU ---------- */
+function availableMoves(b){
+  return b.map((v,i)=> v === '' ? i : null).filter(i => i !== null);
+}
+
+function bestMove(b){
+  // If board empty, pick corner for speed
+  if(availableMoves(b).length === 9) return 0;
+
+  let bestScore = -Infinity;
+  let move = null;
+  for(const i of availableMoves(b)){
+    b[i] = 'O';
+    const score = minimax(b, 0, false);
+    b[i] = '';
+    if(score > bestScore){
+      bestScore = score;
+      move = i;
+    }
+  }
+  return move;
+}
+
+function minimax(b, depth, isMaximizing){
+  const winner = checkWinner(b);
+  if(winner === 'O') return 10 - depth;
+  if(winner === 'X') return depth - 10;
+  if(winner === 'tie') return 0;
+
+  if(isMaximizing){
+    let best = -Infinity;
+    for(const i of availableMoves(b)){
+      b[i] = 'O';
+      best = Math.max(best, minimax(b, depth+1, false));
+      b[i] = '';
+    }
+    return best;
+  } else {
+    let best = Infinity;
+    for(const i of availableMoves(b)){
+      b[i] = 'X';
+      best = Math.min(best, minimax(b, depth+1, true));
+      b[i] = '';
+    }
+    return best;
+  }
+}
+
+/* ---------- Init ---------- */
+renderBoard();
+</script>
+</body>
+</html>
